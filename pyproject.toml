@@ -1,0 +1,39 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "quorum-review"
+version = "0.1.0"
+description = "A multi-agent code reviewer — a panel of specialist LLM agents reviews your diff and returns a single verdict."
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.10"
+authors = [{ name = "Sumanth Kumar M" }]
+keywords = ["llm", "agents", "multi-agent", "code-review", "ai", "static-analysis", "ci"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Topic :: Software Development :: Quality Assurance",
+]
+dependencies = []  # core is pure standard library
+
+[project.optional-dependencies]
+anthropic = ["anthropic>=0.40"]
+openai = ["openai>=1.40"]
+dev = ["ruff>=0.6"]
+
+[project.urls]
+Homepage = "https://github.com/skmdroid/quorum"
+Repository = "https://github.com/skmdroid/quorum"
+
+[project.scripts]
+quorum = "quorum.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["quorum*"]
+
+[tool.ruff]
+line-length = 100

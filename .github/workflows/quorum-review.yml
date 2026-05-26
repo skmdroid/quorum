@@ -1,0 +1,33 @@
+name: Quorum PR Review
+
+# Example: run Quorum on every pull request and post the verdict to the job
+# summary. Uses the built-in mock reviewer by default — swap in a real provider
+# by adding an API key as a repository secret and setting --provider below.
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install Quorum
+        run: python -m pip install -e .
+      - name: Review the diff
+        # For a real review: pip install ".[anthropic]" and set
+        #   --provider anthropic   with  ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        env:
+          PROVIDER: mock
+        run: |
+          git diff "origin/${{ github.base_ref }}...HEAD" > pr.diff
+          quorum review --diff pr.diff --provider "$PROVIDER" \
+            --format markdown --fail-on never >> "$GITHUB_STEP_SUMMARY"

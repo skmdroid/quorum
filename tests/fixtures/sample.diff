@@ -1,0 +1,14 @@
+diff --git a/app/handler.py b/app/handler.py
+index e69de29..1111111 100644
+--- a/app/handler.py
++++ b/app/handler.py
+@@ -0,0 +1,9 @@
++import subprocess
++
++def run(cmd, password="hunter2"):
++    result = eval(cmd)
++    subprocess.run(cmd, shell=True)
++    try:
++        do_thing()
++    except:
++        print("failed")
