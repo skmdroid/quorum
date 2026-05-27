@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en" data-theme="dark">
+<html lang="en" data-theme="light">
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -28,7 +28,8 @@
     --bg: #fbfbfd; --surface: #ffffff; --surface-2: #f5f6f8; --surface-3: #f0f1f4;
     --border: #e5e7eb; --border-soft: #eceef1;
     --text: #15171c; --dim: #5b6270; --faint: #98a0ad;
-    --glow: rgba(129,140,248,.14); --shadow: 0 12px 40px -16px rgba(40,40,80,.18);
+    --accent: #6366f1; --accent-2: #7c3aed; --grad: linear-gradient(135deg,#6366f1,#7c3aed);
+    --glow: rgba(99,102,241,.12); --shadow: 0 12px 40px -16px rgba(40,40,80,.16);
     --crit:#e11d48; --high:#ea580c; --med:#d97706; --low:#2563eb; --info:#64748b;
     --rc:#e11d48; --cm:#d97706; --ap:#059669;
   }
@@ -266,7 +267,7 @@ const setStatus = (t, spin = false) => { statusEl.innerHTML = (spin ? '<span cla
 // theme
 const themeBtn = $("theme");
 const applyTheme = (t) => { document.documentElement.dataset.theme = t; themeBtn.textContent = t === "dark" ? "☾" : "☀"; };
-applyTheme(localStorage.getItem("quorum-theme") || "dark");
+applyTheme(localStorage.getItem("quorum-theme") || "light");
 themeBtn.addEventListener("click", () => {
   const t = document.documentElement.dataset.theme === "dark" ? "light" : "dark";
   localStorage.setItem("quorum-theme", t); applyTheme(t);
