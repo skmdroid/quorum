@@ -56,12 +56,24 @@ def dispatch(files, provider, provider_name: str, model_override=None,
         targets = files if cat == "style" else code_files
         jobs.append((cat, model, focus, targets))
 
-    results = []
-    with ThreadPoolExecutor(max_workers=max_workers) as pool:
-        futures = [pool.submit(run_agent, cat, provider, model, targets, has_tests, focus, rules)
-                   for cat, model, focus, targets in jobs]
-        for fut in as_completed(futures):
-            results.append(fut.result())
-
+    results = _run_jobs(jobs, provider, has_tests, rules, max_workers)
     results.sort(key=lambda r: r.agent)
     return results
+
+
+def _run_jobs(jobs, provider, has_tests, rules, max_workers) -> list:
+    """Run agents in parallel where the runtime allows threads, sequentially
+    otherwise (e.g. Pyodide/WASM has no threads). The agents are independent, so
+    the result is identical — only the wall-clock differs."""
+    def run(job):
+        cat, model, focus, targets = job
+        return run_agent(cat, provider, model, targets, has_tests, focus, rules)
+
+    if max_workers and max_workers > 1 and len(jobs) > 1:
+        try:
+            with ThreadPoolExecutor(max_workers=max_workers) as pool:
+                return [f.result() for f in as_completed(
+                    [pool.submit(run, job) for job in jobs])]
+        except RuntimeError:
+            pass  # no threads available — fall through to sequential
+    return [run(job) for job in jobs]

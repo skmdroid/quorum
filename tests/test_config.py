@@ -109,6 +109,16 @@ class TestRegistryAndRules(unittest.TestCase):
         reg = build_registry(disabled=("style",))
         self.assertNotIn("style", select_agents(parse_diff(_DIFF), reg))
 
+    def test_sequential_matches_parallel(self):
+        # dispatch must produce identical results single-threaded (the Pyodide/WASM path)
+        provider, override = get_provider("mock")
+        files = parse_diff(_DIFF)
+        par = sorted((r.agent, len(r.findings))
+                     for r in dispatch(files, provider, provider.name, override, max_workers=5))
+        seq = sorted((r.agent, len(r.findings))
+                     for r in dispatch(files, provider, provider.name, override, max_workers=1))
+        self.assertEqual(par, seq)
+
 
 if __name__ == "__main__":
     unittest.main()
