@@ -1,0 +1,8 @@
+diff --git a/poller.py b/poller.py
+--- /dev/null
++++ b/poller.py
+@@ -0,0 +1,4 @@
++import time
++def wait_for(x):
++    time.sleep(5)
++    return x

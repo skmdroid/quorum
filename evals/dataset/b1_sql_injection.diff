@@ -1,0 +1,7 @@
+diff --git a/users_repo.py b/users_repo.py
+--- /dev/null
++++ b/users_repo.py
+@@ -0,0 +1,3 @@
++def get_user(db, uid):
++    q = "SELECT id, name FROM users WHERE id = " + uid
++    return db.execute(q)

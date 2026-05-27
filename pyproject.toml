@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "quorum-review"
-version = "0.1.0"
+version = "0.2.0"
 description = "A multi-agent code reviewer — a panel of specialist LLM agents reviews your diff and returns a single verdict."
 readme = "README.md"
 license = { text = "MIT" }

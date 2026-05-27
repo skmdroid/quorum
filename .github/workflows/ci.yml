@@ -24,3 +24,5 @@ jobs:
         run: ruff check --select E9,F quorum
       - name: Test
         run: python -m unittest discover -s tests -t . -v
+      - name: Eval (deterministic detection benchmark)
+        run: python -m quorum.cli eval --provider mock --min-recall 0.6 --max-clean-fp 0

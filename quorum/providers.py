@@ -1,8 +1,16 @@
 """Provider-agnostic LLM layer.
 
-Every provider implements `complete(system, user, model) -> str`. Real agents
-get their own keys (BYO); the built-in MockProvider is deterministic and needs
-no network — it powers the test suite and a zero-setup first run.
+Every provider implements `complete(system, user, model, schema) -> str`. When a
+`schema` is passed and the provider supports it, the reply is constrained to
+that schema with **native structured output** (OpenAI `json_schema`, Anthropic
+forced tool-use, Ollama `format`) — so we get schema-valid JSON instead of
+hoping the prose parses. Providers that can't enforce a schema (the `claude-cli`
+subprocess, arbitrary local models) ignore it and lean on the prompt's JSON
+instruction plus the tolerant parser in `agents.parse_findings`.
+
+Real agents bring their own keys (BYO); the built-in MockProvider is
+deterministic and needs no network — it powers the test suite and a zero-setup
+first run.
 
 Spec syntax for `get_provider`:  "mock", "claude-cli", "anthropic",
 "openai", "ollama", or "<name>:<model>" to pin a single model.
@@ -14,14 +22,14 @@ import os
 import re
 import subprocess
 
-# Default (strong, cheap) model per provider. The dispatcher routes
-# security/performance/correctness -> strong, and tests/style -> cheap.
+# Default (strong, fast) model per provider. The dispatcher routes
+# security/performance/correctness -> strong, and tests/style -> fast.
 PROVIDER_TIERS = {
-    "mock":       {"strong": "mock", "cheap": "mock"},
-    "claude-cli": {"strong": "opus", "cheap": "haiku"},
-    "anthropic":  {"strong": "claude-sonnet-4-5", "cheap": "claude-3-5-haiku-latest"},
-    "openai":     {"strong": "gpt-4o", "cheap": "gpt-4o-mini"},
-    "ollama":     {"strong": None, "cheap": None},
+    "mock":       {"strong": "mock", "fast": "mock"},
+    "claude-cli": {"strong": "opus", "fast": "haiku"},
+    "anthropic":  {"strong": "claude-sonnet-4-5", "fast": "claude-3-5-haiku-latest"},
+    "openai":     {"strong": "gpt-4o", "fast": "gpt-4o-mini"},
+    "ollama":     {"strong": None, "fast": None},
 }
 
 
@@ -32,7 +40,8 @@ class ProviderError(RuntimeError):
 class Provider:
     name = "base"
 
-    def complete(self, system: str, user: str, model: str | None = None) -> str:
+    def complete(self, system: str, user: str, model: str | None = None,
+                 schema: dict | None = None) -> str:
         raise NotImplementedError
 
 
@@ -89,7 +98,7 @@ _MOCK_PATTERNS = {
 class MockProvider(Provider):
     name = "mock"
 
-    def complete(self, system, user, model=None):
+    def complete(self, system, user, model=None, schema=None):
         category = _marker(user, "AGENT_CATEGORY")
         if category == "synthesis":
             return _mock_summary(user)
@@ -149,10 +158,15 @@ def _mock_summary(user):
 # Real providers (lazy imports so the core stays dependency-free).
 # --------------------------------------------------------------------------- #
 class ClaudeCLIProvider(Provider):
-    """Routes through the local `claude` CLI — uses your subscription, not the API."""
+    """Routes through the local `claude` CLI — uses your subscription, not the API.
+
+    The CLI can't enforce a response schema, so `schema` is accepted for a
+    uniform interface but ignored; we rely on the prompt's JSON instruction and
+    the tolerant parser.
+    """
     name = "claude-cli"
 
-    def complete(self, system, user, model=None):
+    def complete(self, system, user, model=None, schema=None):
         cmd = ["claude", "--print", "--dangerously-skip-permissions"]
         if model:
             cmd += ["--model", model]
@@ -174,12 +188,15 @@ class OllamaProvider(Provider):
     def __init__(self, host=None):
         self.host = (host or os.environ.get("OLLAMA_HOST", "http://localhost:11434")).rstrip("/")
 
-    def complete(self, system, user, model=None):
+    def complete(self, system, user, model=None, schema=None):
         import urllib.request
-        body = json.dumps({
+        payload = {
             "model": model or "llama3", "system": system,
             "prompt": user, "stream": False,
-        }).encode()
+        }
+        if schema is not None:
+            payload["format"] = schema   # Ollama constrains decoding to the schema
+        body = json.dumps(payload).encode()
         req = urllib.request.Request(
             self.host + "/api/generate", data=body,
             headers={"Content-Type": "application/json"})
@@ -200,9 +217,24 @@ class AnthropicProvider(Provider):
             raise ProviderError("anthropic not installed — `pip install quorum-review[anthropic]`")
         self._client = anthropic.Anthropic()
 
-    def complete(self, system, user, model=None):
+    def complete(self, system, user, model=None, schema=None):
+        model = model or "claude-3-5-haiku-latest"
+        if schema is not None:
+            # Native structured output via forced tool use: the model must
+            # return arguments matching `schema`, not free-form prose.
+            tool = {"name": "report_findings",
+                    "description": "Return the structured code-review findings.",
+                    "input_schema": schema}
+            msg = self._client.messages.create(
+                model=model, max_tokens=2048, system=system,
+                messages=[{"role": "user", "content": user}],
+                tools=[tool], tool_choice={"type": "tool", "name": "report_findings"})
+            for b in msg.content:
+                if getattr(b, "type", None) == "tool_use":
+                    return json.dumps(b.input)
+            return "[]"
         msg = self._client.messages.create(
-            model=model or "claude-3-5-haiku-latest", max_tokens=2048,
+            model=model, max_tokens=2048,
             system=system, messages=[{"role": "user", "content": user}])
         return "".join(b.text for b in msg.content if getattr(b, "type", None) == "text")
 
@@ -217,11 +249,19 @@ class OpenAIProvider(Provider):
             raise ProviderError("openai not installed — `pip install quorum-review[openai]`")
         self._client = openai.OpenAI()
 
-    def complete(self, system, user, model=None):
-        r = self._client.chat.completions.create(
-            model=model or "gpt-4o-mini",
-            messages=[{"role": "system", "content": system},
-                      {"role": "user", "content": user}])
+    def complete(self, system, user, model=None, schema=None):
+        kwargs = {
+            "model": model or "gpt-4o-mini",
+            "messages": [{"role": "system", "content": system},
+                         {"role": "user", "content": user}],
+        }
+        if schema is not None:
+            # Native Structured Outputs: decoding is constrained to the schema.
+            kwargs["response_format"] = {
+                "type": "json_schema",
+                "json_schema": {"name": "findings", "schema": schema, "strict": True},
+            }
+        r = self._client.chat.completions.create(**kwargs)
         return r.choices[0].message.content or ""
 
 

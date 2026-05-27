@@ -7,7 +7,7 @@
 ![License: MIT](https://img.shields.io/badge/license-MIT-green)
 ![Dependencies](https://img.shields.io/badge/runtime%20deps-0-brightgreen)
 
-> A single LLM asked to "review this code" spreads itself thin and misses things. Quorum gives each concern its **own** agent with a focused prompt, runs them **concurrently**, routes a **stronger model** to the high-stakes checks (security, correctness) and a **cheaper one** to nits (style) — then has a synthesizer make the final call. It's built like production software: zero runtime dependencies, a deterministic offline mode, graceful degradation when an agent fails, and a CI-friendly exit code.
+> A single LLM asked to "review this code" spreads itself thin and misses things. Quorum gives each concern its **own** agent with a focused prompt, runs them **concurrently**, routes a **stronger model** to the high-stakes checks (security, correctness) and a **faster one** to nits (style) — then has a synthesizer make the final call. It's built like production software: zero runtime dependencies, **native structured outputs**, a deterministic offline mode, graceful degradation when an agent fails, a **measured detection benchmark**, **per-repo configuration**, and a CI-friendly exit code.
 
 ---
 
@@ -21,8 +21,8 @@ flowchart TB
     C -->|strong model| S["🛡 Security agent"]
     C -->|strong model| P["⚡ Performance agent"]
     C -->|strong model| K["🎯 Correctness agent"]
-    C -->|cheap model| T["🧪 Tests agent"]
-    C -->|cheap model| Y["✨ Style agent"]
+    C -->|fast model| T["🧪 Tests agent"]
+    C -->|fast model| Y["✨ Style agent"]
 
     S --> F["Structured findings<br/>(file · line · severity · fix)"]
     P --> F
@@ -102,16 +102,57 @@ quorum review --provider ollama:llama3
 
 See [`examples/sample_review.md`](examples/sample_review.md) for a full real review (13 findings) produced by the panel.
 
+### Structured output
+
+Agents request **native structured output**, so the reply is schema-valid by construction instead of being scraped out of prose:
+
+- **OpenAI** — `response_format` with a strict `json_schema`
+- **Anthropic** — a forced tool call whose `input_schema` *is* the findings schema
+- **Ollama** — the `format` field set to the JSON schema (constrained decoding)
+
+Providers that can't enforce a schema — the `claude-cli` subprocess, or a small local model that drifts — fall back to the prompt's JSON instruction plus a tolerant parser that extracts the findings array even when it's wrapped in prose. **Structured-first, with a safety net** — never blindly trusting that free text happens to be valid JSON.
+
 ### Model routing
 
-High-stakes checks deserve a stronger model; nits don't. Each agent declares a **tier** (`strong` or `cheap`) and the dispatcher resolves it per provider:
+High-stakes checks deserve a stronger model; nits don't. Each agent declares a **tier** (`strong` or `fast`) and the dispatcher resolves it per provider:
 
 | Agent | Tier | Anthropic default | OpenAI default |
 |---|---|---|---|
 | security, performance, correctness | `strong` | `claude-sonnet-4-5` | `gpt-4o` |
-| tests, style | `cheap` | `claude-3-5-haiku-latest` | `gpt-4o-mini` |
+| tests, style | `fast` | `claude-3-5-haiku-latest` | `gpt-4o-mini` |
 
 Pin a single model for everything with `--provider anthropic:claude-opus-4-...` (or any `name:model`).
+
+---
+
+## Evaluation
+
+A reviewer you can't measure is a reviewer you can't trust. Quorum ships a **detection benchmark** — a labeled corpus of diffs with known planted defects ([`evals/dataset/`](evals/dataset)) — and scores the two things you can label with confidence:
+
+- **Recall** — of the planted defects, how many did the panel catch? (scored on the defect diffs)
+- **False alarms** — how many findings did it raise on the *clean* diffs, where the answer is "nothing"? (scored on the clean diffs)
+
+```bash
+quorum eval                          # deterministic mock — what CI gates on
+quorum eval --provider claude-cli    # score the real panel on the same corpus
+quorum eval --format markdown        # also: json
+```
+
+The **mock** provider is a pure substring heuristic, so its score never moves — CI gates on it with `--min-recall` / `--max-clean-fp`, no API key:
+
+| Category | Detected | Recall | False alarms (clean) |
+|---|--:|--:|--:|
+| security | 3/4 | 0.75 | 0 |
+| performance | 1/1 | 1.00 | 0 |
+| correctness | 1/3 | 0.33 | 0 |
+| style | 1/1 | 1.00 | 0 |
+| **overall** | **6/9** | **0.67** | **0** |
+
+Recall caps at **0.67** because three defects — a SQL injection built by string concatenation, an off-by-one slice, and a missing null guard — have no keyword tell. That gap is the whole point: it's exactly where a deterministic checker ends and a real model earns its keep. Measured on the same corpus, the **`claude-cli` panel catches all nine (recall 1.00) with zero false alarms on the clean diffs.**
+
+**Why no precision/F1?** On a diff that already contains a known defect, a good reviewer also flags *other* real issues the corpus doesn't label — counting those as false positives would punish thoroughness and conflate "wrong" with "unlabeled-but-valid." So extra findings on defect diffs are reported separately, as information, not as errors. (The `claude-cli` run surfaces ~21 such extra findings across the nine defect diffs — on inspection, mostly legitimate.) Measuring recall on planted defects and false alarms on clean code keeps every number honest.
+
+Methodology follows standard metric-driven LLM-eval practice (a golden dataset scored on detection), kept dependency-free so it ships with the package. Add a case by dropping a `.diff` into [`evals/dataset/`](evals/dataset) and its expected findings into `labels.json`.
 
 ---
 
@@ -124,11 +165,15 @@ quorum review [options]
   --staged           review staged changes (git diff --cached)
   --base REF         review commits since REF (git diff REF...HEAD)
   --provider NAME    mock | claude-cli | anthropic | openai | ollama[:model]
+  --config FILE      use a specific config (default: discover .quorum.json upward)
+  --no-config        ignore any .quorum.json
   --format FMT       text (default) | markdown | json
   --fail-on SEV      exit non-zero if any finding ≥ SEV
                      critical|high|medium|low|never   (default: high)
   --no-color
 ```
+
+A CLI flag overrides `.quorum.json`, which overrides the built-in defaults.
 
 **Exit codes** make it drop-in for CI: `0` when clean (or all findings are below `--fail-on`), `1` when the gate trips, `2` on a usage/provider error.
 
@@ -139,6 +184,37 @@ quorum review --base origin/main --provider anthropic --fail-on high
 # review a diff piped from anywhere
 git diff HEAD~3 | quorum review --diff - --format markdown
 ```
+
+---
+
+## Configuration
+
+Drop a `.quorum.json` at your repo root — Quorum discovers it by searching upward from the working directory, like git finds `.git`. Everything is optional:
+
+```json
+{
+  "provider": "claude-cli",
+  "fail_on": "high",
+  "agents": { "tests": { "enabled": false } },
+  "rules": [
+    "Every network call must pass an explicit timeout.",
+    "No print() — use the logging module."
+  ],
+  "custom_agents": {
+    "accessibility": {
+      "tier": "fast",
+      "focus": "a11y issues in UI code: missing alt text, unlabeled controls, non-semantic markup"
+    }
+  }
+}
+```
+
+- **`provider` / `fail_on` / `format`** — per-repo defaults (a CLI flag still wins).
+- **`agents.<name>.enabled: false`** — drop a built-in specialist from the panel.
+- **`rules`** — house rules injected into every agent's prompt; each agent flags violations that fall within its specialty.
+- **`custom_agents`** — register an entirely new specialist (just a `focus` and a model `tier`) with **zero code**. It joins the panel, runs in parallel, and its findings flow through synthesis like any other agent.
+
+`--config PATH` points at a specific file; `--no-config` ignores any. On Python 3.11+ a `.quorum.toml` works too.
 
 ---
 
@@ -164,7 +240,9 @@ Two workflows ship in [`.github/workflows`](.github/workflows):
 - **Zero runtime dependencies.** The core is pure standard library; provider SDKs are optional extras imported lazily. The package installs and runs anywhere instantly.
 - **Deterministic offline mode.** The mock provider is a real heuristic reviewer, which means the whole pipeline is testable without a network, a key, or flakiness — the test suite runs in milliseconds.
 - **Graceful degradation.** Agents run in a thread pool; an exception in one is captured as a failed `AgentResult` and surfaced, but the rest of the panel still produces a verdict. Reviews don't fail closed on a transient model hiccup.
-- **Structured findings, tolerant parsing.** Agents are asked for strict JSON; the parser extracts the JSON array even if a model wraps it in prose, and coerces/validates every field.
+- **Native structured output, tolerant fallback.** Where the provider supports it (OpenAI `json_schema`, Anthropic tool-use, Ollama `format`) the reply is schema-constrained, not parsed out of prose. For providers that can't enforce a schema, a tolerant parser extracts and validates the findings — so the panel never breaks on a model that wraps its JSON in chatter.
+- **Configurable, not forkable.** A `.quorum.json` enables/disables agents, injects house rules, and registers brand-new specialist agents — without touching source.
+- **Measured, honestly.** A detection benchmark scores recall on planted defects and false alarms on clean code — and deliberately *doesn't* report a precision/F1 that would penalize a thorough reviewer for valid-but-unlabeled findings.
 - **Separation of concerns.** Routing, model selection, agent prompts, synthesis, and rendering are independent modules — adding an agent or a provider is a localized change.
 
 ---
@@ -180,23 +258,27 @@ quorum/
 ├── dispatcher.py    # routing + model tiers + parallel execution
 ├── synthesizer.py   # de-dup, ranking, verdict, summary
 ├── render.py        # text / markdown / json renderers
-└── cli.py           # `quorum review` entry point
+├── evals.py         # detection benchmark: recall + clean-FP over a labeled corpus
+├── config.py        # optional .quorum.json: custom agents, house rules, toggles
+└── cli.py           # `quorum review` + `quorum eval` entry points
+evals/dataset/       # labeled diff corpus (planted defects + labels.json)
 tests/               # deterministic suite (mock provider, no keys)
 ```
 
 ## Testing
 
 ```bash
-python -m unittest discover -s tests -t .
+python -m unittest discover -s tests -t .   # unit + eval-harness tests
+quorum eval                                  # the detection benchmark itself
 ```
 
-No API keys, no network — the suite runs entirely against the mock provider.
+No API keys, no network — both run entirely against the deterministic mock provider.
 
 ## Roadmap
 
 - Inline GitHub PR comments (line-anchored) via the Action
-- Per-repo config file (`.quorum.toml`) for agent/severity tuning
 - A "fix-it" agent that proposes patches for accepted findings
+- Grow the eval corpus toward a real regression suite
 - PyPI release
 
 ## License

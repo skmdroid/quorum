@@ -1,0 +1,120 @@
+{
+  "a1_eval_exec.diff": {
+    "path": "payload_runner.py",
+    "description": "Arbitrary code execution via eval() on untrusted input.",
+    "expected": [
+      {
+        "category": "security",
+        "line": 3,
+        "severity": "critical",
+        "defect": "eval() on dynamic input"
+      }
+    ]
+  },
+  "a2_shell_injection.diff": {
+    "path": "deploy.py",
+    "description": "Shell injection via subprocess(shell=True).",
+    "expected": [
+      {
+        "category": "security",
+        "line": 3,
+        "severity": "high",
+        "defect": "subprocess shell=True"
+      }
+    ]
+  },
+  "a3_bare_except.diff": {
+    "path": "loader.py",
+    "description": "Bare except swallows all errors including KeyboardInterrupt.",
+    "expected": [
+      {
+        "category": "correctness",
+        "line": 4,
+        "severity": "medium",
+        "defect": "bare except"
+      }
+    ]
+  },
+  "a4_hardcoded_secret.diff": {
+    "path": "config.py",
+    "description": "Hardcoded credential committed to source.",
+    "expected": [
+      {
+        "category": "security",
+        "line": 2,
+        "severity": "medium",
+        "defect": "hardcoded secret"
+      }
+    ]
+  },
+  "a5_debug_print.diff": {
+    "path": "service.py",
+    "description": "Leftover debug print() in a request handler.",
+    "expected": [
+      {
+        "category": "style",
+        "line": 2,
+        "severity": "info",
+        "defect": "debug print left in code"
+      }
+    ]
+  },
+  "a6_blocking_sleep.diff": {
+    "path": "poller.py",
+    "description": "Blocking sleep on a hot path.",
+    "expected": [
+      {
+        "category": "performance",
+        "line": 3,
+        "severity": "low",
+        "defect": "blocking sleep"
+      }
+    ]
+  },
+  "b1_sql_injection.diff": {
+    "path": "users_repo.py",
+    "description": "SQL injection via string concatenation (no obvious keyword tell).",
+    "expected": [
+      {
+        "category": "security",
+        "line": 2,
+        "severity": "high",
+        "defect": "sql injection via concatenation"
+      }
+    ]
+  },
+  "b2_off_by_one.diff": {
+    "path": "paginator.py",
+    "description": "Off-by-one: slice end overruns the page size.",
+    "expected": [
+      {
+        "category": "correctness",
+        "line": 3,
+        "severity": "medium",
+        "defect": "off-by-one slice"
+      }
+    ]
+  },
+  "b3_missing_null_check.diff": {
+    "path": "profile.py",
+    "description": "No guard for a None user / missing attributes.",
+    "expected": [
+      {
+        "category": "correctness",
+        "line": 2,
+        "severity": "medium",
+        "defect": "missing none/null check"
+      }
+    ]
+  },
+  "c1_clean_refactor.diff": {
+    "path": "math_utils.py",
+    "description": "Clean, well-formed helper. Should raise nothing.",
+    "expected": []
+  },
+  "c2_docs_only.diff": {
+    "path": "README.md",
+    "description": "Docs-only change. Should raise nothing.",
+    "expected": []
+  }
+}

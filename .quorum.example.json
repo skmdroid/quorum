@@ -1,0 +1,17 @@
+{
+  "provider": "claude-cli",
+  "fail_on": "high",
+  "agents": {
+    "tests": { "enabled": true }
+  },
+  "rules": [
+    "Every network call must pass an explicit timeout.",
+    "No print() — use the logging module."
+  ],
+  "custom_agents": {
+    "accessibility": {
+      "tier": "fast",
+      "focus": "a11y issues in UI code: missing alt text, unlabeled controls, non-semantic markup"
+    }
+  }
+}

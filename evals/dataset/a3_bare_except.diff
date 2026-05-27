@@ -1,0 +1,9 @@
+diff --git a/loader.py b/loader.py
+--- /dev/null
++++ b/loader.py
+@@ -0,0 +1,5 @@
++def load(path):
++    try:
++        return open(path).read()
++    except:
++        return None

@@ -1,5 +1,9 @@
 """Specialist review agents. Each agent has a focus + a model tier; it sends
-the added code to the provider and parses back structured findings."""
+the added code to the provider and parses back structured findings.
+
+Agents are *data*, not a class hierarchy — so a config file can disable one,
+retune another, or add an entirely new specialist with no code change (see
+`build_registry` and `config.py`)."""
 from __future__ import annotations
 
 import json
@@ -8,7 +12,7 @@ from .schema import Finding
 from .schema import AgentResult
 from .providers import ProviderError
 
-# tier -> resolved to a concrete model by the dispatcher (cheap vs strong).
+# tier -> resolved to a concrete model by the dispatcher (fast vs strong).
 AGENTS = {
     "security": {
         "tier": "strong",
@@ -26,33 +30,76 @@ AGENTS = {
                  "handling, race conditions, and plainly incorrect logic",
     },
     "tests": {
-        "tier": "cheap",
+        "tier": "fast",
         "focus": "test coverage: whether the changed behavior is covered by new or updated "
                  "tests, and missing edge-case tests",
     },
     "style": {
-        "tier": "cheap",
+        "tier": "fast",
         "focus": "readability and maintainability: naming, dead code, leftover debug prints, "
                  "overly long lines, unclear structure (non-blocking nits)",
     },
 }
 
 _SCHEMA_HINT = (
-    'Respond with ONLY a JSON array (no prose, no markdown fences). Each element: '
-    '{"file": string, "line": integer or null, '
+    'Respond with ONLY a JSON object: {"findings": [ ... ]} (no prose, no markdown '
+    'fences). Each finding: {"file": string, "line": integer or null, '
     '"severity": one of "critical"|"high"|"medium"|"low"|"info", '
     '"title": short string, "detail": string, "suggestion": string}. '
-    "Return [] if you find nothing."
+    'Use {"findings": []} if you find nothing.'
 )
 
+# JSON schema for native structured output. Providers that support it (OpenAI
+# json_schema, Anthropic tool-use, Ollama format=) are constrained to this, so
+# the reply is schema-valid by construction; the rest rely on the prompt hint
+# above plus the tolerant parser in `parse_findings`.
+_FINDING_PROPS = {
+    "file": {"type": "string"},
+    "line": {"type": ["integer", "null"]},
+    "severity": {"type": "string", "enum": ["critical", "high", "medium", "low", "info"]},
+    "title": {"type": "string"},
+    "detail": {"type": "string"},
+    "suggestion": {"type": "string"},
+}
+FINDINGS_SCHEMA = {
+    "type": "object",
+    "additionalProperties": False,
+    "properties": {
+        "findings": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "additionalProperties": False,
+                "properties": _FINDING_PROPS,
+                "required": list(_FINDING_PROPS),
+            },
+        }
+    },
+    "required": ["findings"],
+}
 
-def system_prompt(category: str) -> str:
-    focus = AGENTS[category]["focus"]
-    return (
+
+def build_registry(disabled=(), custom_agents=None) -> dict:
+    """The effective agent set: built-ins minus `disabled`, plus `custom_agents`
+    (each a {'tier', 'focus'} dict). Used to apply a `.quorum.json` config."""
+    reg = {name: spec for name, spec in AGENTS.items() if name not in disabled}
+    for name, spec in (custom_agents or {}).items():
+        reg[name] = {"tier": spec.get("tier", "fast"), "focus": spec["focus"]}
+    return reg
+
+
+def system_prompt(category: str, focus: str | None = None, rules=None) -> str:
+    focus = focus or AGENTS[category]["focus"]
+    prompt = (
         f"You are a meticulous senior engineer serving as the **{category}** specialist on a "
         f"code-review panel. Review ONLY for: {focus}. Only flag real issues in the ADDED lines; "
         f"avoid false positives and do not comment outside your specialty. {_SCHEMA_HINT}"
     )
+    if rules:
+        prompt += ("\n\nAlso enforce these project-specific rules where they fall within your "
+                   "specialty, reporting any violation as a finding:\n"
+                   + "\n".join(f"- {r}" for r in rules))
+    return prompt
 
 
 def format_files(files) -> str:
@@ -73,17 +120,42 @@ def build_user(category: str, files, tests_present: bool) -> str:
     return header + "Review the following added code:\n\n" + format_files(files)
 
 
-def parse_findings(raw: str, category: str) -> list:
+def _json_candidates(text: str):
+    """Substrings of `text` that might be the JSON payload, most-likely first."""
+    yield text
+    o, oc = text.find("{"), text.rfind("}")
+    if 0 <= o < oc:
+        yield text[o:oc + 1]
+    a, ac = text.find("["), text.rfind("]")
+    if 0 <= a < ac:
+        yield text[a:ac + 1]
+
+
+def _extract_items(raw: str) -> list:
+    """Pull the findings list out of a model reply — whether it's a structured
+    object {"findings": [...]}, a bare JSON array, or an array embedded in prose.
+    Robust to providers that couldn't enforce a schema."""
     text = (raw or "").strip()
-    start, end = text.find("["), text.rfind("]")
-    if start == -1 or end == -1 or end < start:
+    if not text:
         return []
-    try:
-        items = json.loads(text[start:end + 1])
-    except (ValueError, TypeError):
-        return []
+    for candidate in _json_candidates(text):
+        try:
+            data = json.loads(candidate)
+        except (ValueError, TypeError):
+            continue
+        if isinstance(data, dict):
+            items = data.get("findings") or data.get("issues")
+            if isinstance(items, list):
+                return items
+            continue   # a dict without a findings list — try the next candidate
+        if isinstance(data, list):
+            return data
+    return []
+
+
+def parse_findings(raw: str, category: str) -> list:
     findings = []
-    for it in items:
+    for it in _extract_items(raw):
         if not isinstance(it, dict):
             continue
         line = it.get("line")
@@ -99,11 +171,13 @@ def parse_findings(raw: str, category: str) -> list:
     return findings
 
 
-def run_agent(category: str, provider, model, files, tests_present: bool) -> AgentResult:
+def run_agent(category: str, provider, model, files, tests_present: bool,
+              focus: str | None = None, rules=None) -> AgentResult:
     label = model or provider.name
     try:
-        raw = provider.complete(system_prompt(category),
-                                build_user(category, files, tests_present), model)
+        raw = provider.complete(system_prompt(category, focus, rules),
+                                build_user(category, files, tests_present),
+                                model, schema=FINDINGS_SCHEMA)
         return AgentResult(agent=category, model=label,
                            findings=parse_findings(raw, category))
     except ProviderError as e:

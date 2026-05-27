@@ -1,0 +1,6 @@
+diff --git a/profile.py b/profile.py
+--- /dev/null
++++ b/profile.py
+@@ -0,0 +1,2 @@
++def display_name(user):
++    return user.first + " " + user.last
