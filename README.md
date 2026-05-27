@@ -7,6 +7,8 @@
 ![License: MIT](https://img.shields.io/badge/license-MIT-green)
 ![Dependencies](https://img.shields.io/badge/runtime%20deps-0-brightgreen)
 
+**▶ [Try the live demo](https://skmdroid.github.io/quorum/)** — runs entirely in your browser via Pyodide. No install, no API key.
+
 > A single LLM asked to "review this code" spreads itself thin and misses things. Quorum gives each concern its **own** agent with a focused prompt, runs them **concurrently**, routes a **stronger model** to the high-stakes checks (security, correctness) and a **faster one** to nits (style) — then has a synthesizer make the final call. It's built like production software: zero runtime dependencies, **native structured outputs**, a deterministic offline mode, graceful degradation when an agent fails, a **measured detection benchmark**, **per-repo configuration**, and a CI-friendly exit code.
 
 ---

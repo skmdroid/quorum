@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Quorum — live demo</title>
+<meta name="description" content="Quorum: a multi-agent code reviewer, running entirely in your browser via Pyodide." />
+<style>
+  :root {
+    --bg: #0a0c10; --panel: #11151c; --panel2: #0e1218; --border: #20262e;
+    --text: #e6edf3; --muted: #8b949e; --accent: #58a6ff;
+    --crit: #f85149; --high: #ff7b72; --med: #d29922; --low: #58a6ff; --info: #6e7681;
+    --green: #3fb950; --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 15px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 960px; margin: 0 auto; padding: 48px 24px 80px; }
+  header h1 { font-size: 30px; margin: 0 0 6px; letter-spacing: -0.02em; }
+  header .tag { color: var(--muted); margin: 0 0 4px; font-size: 16px; }
+  header .sub { color: var(--muted); font-size: 13.5px; }
+  header a { color: var(--accent); text-decoration: none; }
+  header a:hover { text-decoration: underline; }
+  .grid { margin-top: 30px; display: grid; gap: 20px; }
+  label.cap { display: block; font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); margin-bottom: 8px; }
+  textarea {
+    width: 100%; min-height: 280px; resize: vertical; background: var(--panel2);
+    color: var(--text); border: 1px solid var(--border); border-radius: 10px;
+    padding: 14px 16px; font-family: var(--mono); font-size: 13px; line-height: 1.55;
+    tab-size: 2;
+  }
+  textarea:focus { outline: none; border-color: var(--accent); }
+  .row { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+  button {
+    background: var(--accent); color: #04101f; border: 0; border-radius: 8px;
+    padding: 11px 20px; font-size: 14px; font-weight: 600; cursor: pointer;
+  }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+  button.ghost { background: transparent; color: var(--muted); border: 1px solid var(--border); font-weight: 500; }
+  #status { color: var(--muted); font-size: 13.5px; min-height: 20px; }
+  #status .spin { display: inline-block; width: 12px; height: 12px; border: 2px solid var(--border);
+    border-top-color: var(--accent); border-radius: 50%; animation: s 0.8s linear infinite; vertical-align: -2px; margin-right: 8px; }
+  @keyframes s { to { transform: rotate(360deg); } }
+  .verdict { display: inline-flex; align-items: center; gap: 10px; padding: 10px 16px; border-radius: 10px;
+    font-weight: 700; font-size: 15px; border: 1px solid var(--border); }
+  .verdict.REQUEST_CHANGES { color: var(--high); border-color: #4a2520; background: #1a0f0e; }
+  .verdict.COMMENT { color: var(--med); border-color: #463913; background: #16120a; }
+  .verdict.APPROVE { color: var(--green); border-color: #18331f; background: #0c1710; }
+  .summary { color: var(--muted); margin: 14px 0 22px; }
+  .counts { display: flex; gap: 16px; flex-wrap: wrap; color: var(--muted); font-size: 13px; margin-bottom: 20px; }
+  .finding { border: 1px solid var(--border); border-left-width: 3px; border-radius: 8px;
+    background: var(--panel); padding: 14px 16px; margin-bottom: 12px; }
+  .finding .top { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+  .sev { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; }
+  .finding .title { font-weight: 600; }
+  .finding .loc { color: var(--muted); font-family: var(--mono); font-size: 12.5px; }
+  .finding .detail { color: #c9d1d9; margin-top: 8px; font-size: 14px; }
+  .finding .fix { color: var(--muted); margin-top: 6px; font-size: 13.5px; }
+  .finding .fix b { color: var(--green); font-weight: 600; }
+  .crit { border-left-color: var(--crit); } .sev.crit { color: var(--crit); }
+  .high { border-left-color: var(--high); } .sev.high { color: var(--high); }
+  .med  { border-left-color: var(--med);  } .sev.med  { color: var(--med); }
+  .low  { border-left-color: var(--low);  } .sev.low  { color: var(--low); }
+  .info { border-left-color: var(--info); } .sev.info { color: var(--info); }
+  footer { margin-top: 56px; padding-top: 22px; border-top: 1px solid var(--border); color: var(--muted); font-size: 13px; }
+  footer a { color: var(--accent); text-decoration: none; }
+  code { font-family: var(--mono); background: var(--panel2); padding: 1px 5px; border-radius: 4px; font-size: 12.5px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Quorum</h1>
+    <p class="tag">A multi-agent code reviewer — a panel of specialist agents reviews your diff and returns one verdict.</p>
+    <p class="sub">Running entirely in your browser via <a href="https://pyodide.org" target="_blank" rel="noopener">Pyodide</a> — no server, no API key. &nbsp;·&nbsp; <a href="https://github.com/skmdroid/quorum" target="_blank" rel="noopener">Source on GitHub →</a></p>
+  </header>
+
+  <div class="grid">
+    <div>
+      <label class="cap" for="diff">Paste a unified diff (or use the sample)</label>
+      <textarea id="diff" spellcheck="false">diff --git a/app/handler.py b/app/handler.py
+--- /dev/null
++++ b/app/handler.py
+@@ -0,0 +1,13 @@
++import subprocess
++
++password = "hunter2"
++
++def handle(cmd, user_id):
++    print("handling", cmd)
++    result = eval(cmd)
++    subprocess.run(cmd, shell=True)
++    rows = db.execute("SELECT * FROM users WHERE id = " + user_id)
++    try:
++        return process(result, rows)
++    except:
++        return None
+</textarea>
+    </div>
+    <div class="row">
+      <button id="run" disabled>Run review</button>
+      <button id="sample" class="ghost">Reset sample</button>
+      <span id="status"><span class="spin"></span>Loading Python runtime…</span>
+    </div>
+    <div id="results"></div>
+  </div>
+
+  <footer>
+    This page runs the <b>deterministic offline reviewer</b> (a heuristic, no LLM) so the demo is free and key-safe.
+    For real reviews by an LLM panel, run it locally:
+    <code>pip install -e . &amp;&amp; quorum review --diff pr.diff --provider claude-cli</code>.
+    See the <a href="https://github.com/skmdroid/quorum#readme" target="_blank" rel="noopener">README</a> for providers, config, and the eval benchmark.
+  </footer>
+</div>
+
+<script src="https://cdn.jsdelivr.net/pyodide/v0.26.4/full/pyodide.js"></script>
+<script type="module">
+const PYODIDE_URL = "https://cdn.jsdelivr.net/pyodide/v0.26.4/full/";
+const MODULES = ["__init__", "schema", "diff", "providers", "agents", "dispatcher", "synthesizer"];
+const SAMPLE = document.getElementById("diff").value;
+const SEV_CLASS = { critical: "crit", high: "high", medium: "med", low: "low", info: "info" };
+const SEV_DOT = { critical: "⛔", high: "🔴", medium: "🟡", low: "🔵", info: "⚪" };
+
+const RUNNER = `
+import json
+from quorum.diff import parse_diff
+from quorum.dispatcher import dispatch
+from quorum.synthesizer import synthesize
+from quorum.providers import get_provider
+
+def quorum_review(diff_text):
+    files = parse_diff(diff_text)
+    if not files:
+        return json.dumps({"verdict": "APPROVE",
+                           "summary": "No added lines found in the diff — nothing to review.",
+                           "stats": {}, "findings": [], "agents": []})
+    provider, override = get_provider("mock")
+    results = dispatch(files, provider, provider.name, override)
+    result = synthesize(results, provider, override)
+    return json.dumps(result.to_dict())
+`;
+
+const statusEl = document.getElementById("status");
+const runBtn = document.getElementById("run");
+const sampleBtn = document.getElementById("sample");
+const resultsEl = document.getElementById("results");
+
+function setStatus(text, spin = false) {
+  statusEl.innerHTML = (spin ? '<span class="spin"></span>' : "") + (text || "");
+}
+function esc(s) { return String(s).replace(/[&<>]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c])); }
+
+const ready = (async () => {
+  try {
+    const pyodide = await loadPyodide({ indexURL: PYODIDE_URL });
+    setStatus("Loading Quorum…", true);
+    pyodide.FS.mkdir("/quorum");
+    for (const m of MODULES) {
+      const resp = await fetch(`./quorum/${m}.py`);
+      if (!resp.ok) throw new Error(`could not load quorum/${m}.py (${resp.status})`);
+      pyodide.FS.writeFile(`/quorum/${m}.py`, await resp.text());
+    }
+    pyodide.runPython("import sys; sys.path.insert(0, '/')");
+    pyodide.runPython(RUNNER);
+    setStatus("Ready — runs entirely in your browser.");
+    runBtn.disabled = false;
+    return pyodide;
+  } catch (e) {
+    setStatus("Failed to load: " + e.message);
+    throw e;
+  }
+})();
+
+async function run() {
+  let pyodide;
+  try { pyodide = await ready; } catch { return; }
+  runBtn.disabled = true;
+  setStatus("Reviewing…", true);
+  try {
+    pyodide.globals.set("DIFF_TEXT", document.getElementById("diff").value);
+    const out = JSON.parse(pyodide.runPython("quorum_review(DIFF_TEXT)"));
+    render(out);
+    setStatus("Reviewed in your browser — no data left this page.");
+  } catch (e) {
+    setStatus("Error: " + e.message);
+  } finally {
+    runBtn.disabled = false;
+  }
+}
+
+function render(r) {
+  const s = r.stats || {};
+  const counts = ["critical", "high", "medium", "low", "info"]
+    .filter(k => s[k]).map(k => `${SEV_DOT[k]} ${s[k]} ${k}`).join("&nbsp;&nbsp;");
+  const findings = (r.findings || []).map(f => {
+    const cls = SEV_CLASS[f.severity] || "info";
+    const loc = esc(f.file || "") + (f.line != null ? ":" + f.line : "");
+    const fix = f.suggestion ? `<div class="fix"><b>Fix</b> ${esc(f.suggestion)}</div>` : "";
+    const detail = f.detail ? `<div class="detail">${esc(f.detail)}</div>` : "";
+    return `<div class="finding ${cls}">
+      <div class="top">
+        <span class="sev ${cls}">${SEV_DOT[f.severity] || "•"} ${esc(f.severity)}</span>
+        <span class="title">${esc(f.title)}</span>
+      </div>
+      <div class="loc">${loc} · ${esc(f.category)}</div>
+      ${detail}${fix}
+    </div>`;
+  }).join("");
+  resultsEl.innerHTML = `
+    <div class="verdict ${esc(r.verdict)}">VERDICT: ${esc(r.verdict)}</div>
+    <p class="summary">${esc(r.summary || "")}</p>
+    ${counts ? `<div class="counts">${counts}</div>` : ""}
+    ${findings || '<p class="summary">No findings.</p>'}`;
+}
+
+runBtn.addEventListener("click", run);
+sampleBtn.addEventListener("click", () => { document.getElementById("diff").value = SAMPLE; resultsEl.innerHTML = ""; });
+</script>
+</body>
+</html>

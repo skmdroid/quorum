@@ -10,7 +10,7 @@ from .dispatcher import dispatch
 from .synthesizer import synthesize
 from .providers import get_provider
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 __all__ = [
     "Finding", "AgentResult", "ReviewResult",
     "parse_diff", "dispatch", "synthesize", "get_provider",
