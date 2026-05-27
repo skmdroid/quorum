@@ -1,86 +1,183 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Quorum — live demo</title>
-<meta name="description" content="Quorum: a multi-agent code reviewer, running entirely in your browser via Pyodide." />
+<title>Quorum — multi-agent code review, in your browser</title>
+<meta name="description" content="Quorum: a multi-agent code reviewer. A panel of specialist agents reviews your diff and returns one verdict — running entirely in your browser via Pyodide." />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
 <style>
   :root {
-    --bg: #0a0c10; --panel: #11151c; --panel2: #0e1218; --border: #20262e;
-    --text: #e6edf3; --muted: #8b949e; --accent: #58a6ff;
-    --crit: #f85149; --high: #ff7b72; --med: #d29922; --low: #58a6ff; --info: #6e7681;
-    --green: #3fb950; --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+    --accent: #818cf8; --accent-2: #c084fc;
+    --grad: linear-gradient(135deg, #818cf8 0%, #c084fc 100%);
+    --crit: #fb7185; --high: #fb923c; --med: #fbbf24; --low: #60a5fa; --info: #94a3b8;
+    --rc: #fb7185; --cm: #fbbf24; --ap: #34d399;
+    --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    --sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    --radius: 14px;
+  }
+  [data-theme="dark"] {
+    --bg: #08090d; --surface: #111319; --surface-2: #0c0e13; --surface-3: #161922;
+    --border: #232733; --border-soft: #1a1d27;
+    --text: #e8ebf2; --dim: #9aa3b4; --faint: #5f6675;
+    --glow: rgba(129,140,248,.16); --shadow: 0 12px 40px -12px rgba(0,0,0,.6);
+  }
+  [data-theme="light"] {
+    --bg: #fbfbfd; --surface: #ffffff; --surface-2: #f5f6f8; --surface-3: #f0f1f4;
+    --border: #e5e7eb; --border-soft: #eceef1;
+    --text: #15171c; --dim: #5b6270; --faint: #98a0ad;
+    --glow: rgba(129,140,248,.14); --shadow: 0 12px 40px -16px rgba(40,40,80,.18);
+    --crit:#e11d48; --high:#ea580c; --med:#d97706; --low:#2563eb; --info:#64748b;
+    --rc:#e11d48; --cm:#d97706; --ap:#059669;
   }
   * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
   body {
-    margin: 0; background: var(--bg); color: var(--text);
-    font: 15px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-    -webkit-font-smoothing: antialiased;
+    margin: 0; background: var(--bg); color: var(--text); font-family: var(--sans);
+    font-size: 15px; line-height: 1.6; -webkit-font-smoothing: antialiased; position: relative; overflow-x: hidden;
   }
-  .wrap { max-width: 960px; margin: 0 auto; padding: 48px 24px 80px; }
-  header h1 { font-size: 30px; margin: 0 0 6px; letter-spacing: -0.02em; }
-  header .tag { color: var(--muted); margin: 0 0 4px; font-size: 16px; }
-  header .sub { color: var(--muted); font-size: 13.5px; }
-  header a { color: var(--accent); text-decoration: none; }
-  header a:hover { text-decoration: underline; }
-  .grid { margin-top: 30px; display: grid; gap: 20px; }
-  label.cap { display: block; font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); margin-bottom: 8px; }
+  body::before {
+    content: ""; position: fixed; inset: 0; z-index: 0; pointer-events: none;
+    background: radial-gradient(900px 480px at 50% -12%, var(--glow), transparent 70%);
+  }
+  .wrap { position: relative; z-index: 1; max-width: 1000px; margin: 0 auto; padding: 0 24px 90px; }
+
+  /* top bar */
+  nav { display: flex; align-items: center; justify-content: space-between; padding: 22px 0 0; }
+  .brand { display: flex; align-items: center; gap: 11px; font-weight: 700; letter-spacing: -0.01em; font-size: 17px; }
+  .mark { width: 28px; height: 28px; border-radius: 8px; background: var(--grad); display: grid; place-items: center;
+    color: #fff; font-size: 15px; box-shadow: 0 4px 14px -4px var(--accent); }
+  .nav-r { display: flex; align-items: center; gap: 8px; }
+  .iconbtn, .ghostlink {
+    background: var(--surface); border: 1px solid var(--border); color: var(--dim); border-radius: 9px;
+    height: 36px; padding: 0 13px; display: inline-flex; align-items: center; gap: 7px; cursor: pointer;
+    font-size: 13.5px; font-family: var(--sans); text-decoration: none; transition: .15s;
+  }
+  .iconbtn { width: 36px; padding: 0; justify-content: center; }
+  .iconbtn:hover, .ghostlink:hover { color: var(--text); border-color: var(--accent); }
+
+  /* hero */
+  header.hero { padding: 56px 0 34px; max-width: 760px; }
+  .pill { display: inline-flex; align-items: center; gap: 7px; font-size: 12.5px; color: var(--dim);
+    background: var(--surface); border: 1px solid var(--border); border-radius: 999px; padding: 5px 13px; margin-bottom: 22px; }
+  .pill .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ap); box-shadow: 0 0 8px var(--ap); }
+  h1 { font-size: clamp(34px, 6vw, 52px); line-height: 1.05; letter-spacing: -0.03em; margin: 0 0 16px; font-weight: 800; }
+  h1 .g { background: var(--grad); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; }
+  .lede { font-size: 18px; color: var(--dim); margin: 0; max-width: 640px; }
+  .lede b { color: var(--text); font-weight: 600; }
+
+  /* agent panel */
+  .agents { display: flex; flex-wrap: wrap; gap: 10px; margin: 30px 0 8px; }
+  .chip {
+    display: flex; align-items: center; gap: 9px; padding: 9px 14px 9px 11px; border-radius: 11px;
+    background: var(--surface); border: 1px solid var(--border); transition: .25s; min-width: 132px;
+  }
+  .chip .ico { font-size: 16px; filter: grayscale(.4); transition: .25s; }
+  .chip .meta { display: flex; flex-direction: column; line-height: 1.25; }
+  .chip .nm { font-size: 13.5px; font-weight: 600; }
+  .chip .st { font-size: 11.5px; color: var(--faint); }
+  .chip .badge { margin-left: auto; min-width: 22px; height: 22px; padding: 0 6px; border-radius: 7px; display: grid; place-items: center;
+    font-size: 12px; font-weight: 700; background: var(--surface-3); color: var(--faint); }
+  .chip.scanning { border-color: var(--accent); animation: pulse 1.05s ease-in-out infinite; }
+  .chip.scanning .ico { filter: none; }
+  .chip.found { border-color: color-mix(in srgb, var(--high) 55%, var(--border)); }
+  .chip.found .ico { filter: none; }
+  .chip.found .badge { background: color-mix(in srgb, var(--high) 22%, transparent); color: var(--high); }
+  .chip.clean .badge { background: color-mix(in srgb, var(--ap) 18%, transparent); color: var(--ap); }
+  @keyframes pulse { 0%,100% { opacity: .55; } 50% { opacity: 1; } }
+
+  /* editor */
+  .editor { margin-top: 22px; border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; background: var(--surface-2); box-shadow: var(--shadow); }
+  .editor-bar { display: flex; align-items: center; gap: 12px; padding: 11px 15px; border-bottom: 1px solid var(--border-soft); background: var(--surface); }
+  .dots { display: flex; gap: 7px; }
+  .dots i { width: 11px; height: 11px; border-radius: 50%; background: var(--border); }
+  .dots i:nth-child(1){ background:#ff5f57; } .dots i:nth-child(2){ background:#febc2e; } .dots i:nth-child(3){ background:#28c840; }
+  .editor-name { font-family: var(--mono); font-size: 12.5px; color: var(--faint); }
   textarea {
-    width: 100%; min-height: 280px; resize: vertical; background: var(--panel2);
-    color: var(--text); border: 1px solid var(--border); border-radius: 10px;
-    padding: 14px 16px; font-family: var(--mono); font-size: 13px; line-height: 1.55;
-    tab-size: 2;
+    width: 100%; min-height: 300px; resize: vertical; background: transparent; color: var(--text);
+    border: 0; padding: 16px 18px; font-family: var(--mono); font-size: 13px; line-height: 1.65; tab-size: 2;
   }
-  textarea:focus { outline: none; border-color: var(--accent); }
-  .row { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
-  button {
-    background: var(--accent); color: #04101f; border: 0; border-radius: 8px;
-    padding: 11px 20px; font-size: 14px; font-weight: 600; cursor: pointer;
-  }
-  button:disabled { opacity: 0.5; cursor: not-allowed; }
-  button.ghost { background: transparent; color: var(--muted); border: 1px solid var(--border); font-weight: 500; }
-  #status { color: var(--muted); font-size: 13.5px; min-height: 20px; }
-  #status .spin { display: inline-block; width: 12px; height: 12px; border: 2px solid var(--border);
-    border-top-color: var(--accent); border-radius: 50%; animation: s 0.8s linear infinite; vertical-align: -2px; margin-right: 8px; }
-  @keyframes s { to { transform: rotate(360deg); } }
-  .verdict { display: inline-flex; align-items: center; gap: 10px; padding: 10px 16px; border-radius: 10px;
-    font-weight: 700; font-size: 15px; border: 1px solid var(--border); }
-  .verdict.REQUEST_CHANGES { color: var(--high); border-color: #4a2520; background: #1a0f0e; }
-  .verdict.COMMENT { color: var(--med); border-color: #463913; background: #16120a; }
-  .verdict.APPROVE { color: var(--green); border-color: #18331f; background: #0c1710; }
-  .summary { color: var(--muted); margin: 14px 0 22px; }
-  .counts { display: flex; gap: 16px; flex-wrap: wrap; color: var(--muted); font-size: 13px; margin-bottom: 20px; }
-  .finding { border: 1px solid var(--border); border-left-width: 3px; border-radius: 8px;
-    background: var(--panel); padding: 14px 16px; margin-bottom: 12px; }
-  .finding .top { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
-  .sev { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; }
-  .finding .title { font-weight: 600; }
-  .finding .loc { color: var(--muted); font-family: var(--mono); font-size: 12.5px; }
-  .finding .detail { color: #c9d1d9; margin-top: 8px; font-size: 14px; }
-  .finding .fix { color: var(--muted); margin-top: 6px; font-size: 13.5px; }
-  .finding .fix b { color: var(--green); font-weight: 600; }
-  .crit { border-left-color: var(--crit); } .sev.crit { color: var(--crit); }
-  .high { border-left-color: var(--high); } .sev.high { color: var(--high); }
-  .med  { border-left-color: var(--med);  } .sev.med  { color: var(--med); }
-  .low  { border-left-color: var(--low);  } .sev.low  { color: var(--low); }
-  .info { border-left-color: var(--info); } .sev.info { color: var(--info); }
-  footer { margin-top: 56px; padding-top: 22px; border-top: 1px solid var(--border); color: var(--muted); font-size: 13px; }
+  textarea:focus { outline: none; }
+
+  /* controls */
+  .controls { display: flex; align-items: center; gap: 14px; margin-top: 18px; flex-wrap: wrap; }
+  .run { background: var(--grad); color: #0a0118; border: 0; border-radius: 11px; padding: 13px 26px;
+    font-family: var(--sans); font-size: 15px; font-weight: 700; cursor: pointer; transition: .15s; box-shadow: 0 8px 24px -8px var(--accent); }
+  .run:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 12px 28px -8px var(--accent); }
+  .run:active:not(:disabled) { transform: translateY(0); }
+  .run:disabled { opacity: .55; cursor: not-allowed; }
+  .reset { background: transparent; color: var(--dim); border: 1px solid var(--border); border-radius: 10px;
+    padding: 12px 18px; font-family: var(--sans); font-size: 14px; cursor: pointer; }
+  .reset:hover { color: var(--text); border-color: var(--accent); }
+  #status { color: var(--dim); font-size: 13.5px; display: inline-flex; align-items: center; gap: 9px; }
+  .spin { width: 14px; height: 14px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: rot .75s linear infinite; }
+  @keyframes rot { to { transform: rotate(360deg); } }
+
+  /* results */
+  #results { margin-top: 30px; }
+  .verdict { display: flex; align-items: center; gap: 14px; padding: 18px 20px; border-radius: var(--radius);
+    border: 1px solid var(--border); background: var(--surface); animation: rise .5s ease both; }
+  .verdict .vico { width: 40px; height: 40px; border-radius: 10px; display: grid; place-items: center; font-size: 20px; flex: 0 0 auto; }
+  .verdict .vt { font-size: 12px; text-transform: uppercase; letter-spacing: .1em; color: var(--faint); }
+  .verdict .vv { font-size: 19px; font-weight: 800; letter-spacing: -0.01em; }
+  .verdict.REQUEST_CHANGES { box-shadow: inset 3px 0 0 var(--rc); } .verdict.REQUEST_CHANGES .vico { background: color-mix(in srgb, var(--rc) 18%, transparent); } .verdict.REQUEST_CHANGES .vv { color: var(--rc); }
+  .verdict.COMMENT { box-shadow: inset 3px 0 0 var(--cm); } .verdict.COMMENT .vico { background: color-mix(in srgb, var(--cm) 18%, transparent); } .verdict.COMMENT .vv { color: var(--cm); }
+  .verdict.APPROVE { box-shadow: inset 3px 0 0 var(--ap); } .verdict.APPROVE .vico { background: color-mix(in srgb, var(--ap) 18%, transparent); } .verdict.APPROVE .vv { color: var(--ap); }
+  .summary { color: var(--dim); margin: 14px 2px 18px; font-size: 14.5px; }
+  .counts { display: flex; gap: 9px; flex-wrap: wrap; margin-bottom: 20px; }
+  .cnt { font-size: 12.5px; font-weight: 600; padding: 5px 11px; border-radius: 999px; border: 1px solid var(--border); }
+  .cnt .d { font-weight: 800; }
+
+  .finding { border: 1px solid var(--border); border-left: 3px solid var(--info); border-radius: 11px;
+    background: var(--surface); padding: 15px 17px; margin-bottom: 12px; animation: rise .42s ease both; }
+  .finding .top { display: flex; align-items: center; gap: 11px; flex-wrap: wrap; }
+  .sev { font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: .05em; padding: 3px 9px; border-radius: 6px; }
+  .ftitle { font-weight: 650; font-size: 15px; }
+  .loc { margin-left: auto; color: var(--faint); font-family: var(--mono); font-size: 12px; }
+  .detail { color: var(--text); opacity: .85; margin-top: 9px; font-size: 14px; }
+  .fix { color: var(--dim); margin-top: 7px; font-size: 13.5px; }
+  .fix b { color: var(--ap); font-weight: 600; }
+  .finding.crit { border-left-color: var(--crit); } .sev.crit { background: color-mix(in srgb,var(--crit) 16%,transparent); color: var(--crit); }
+  .finding.high { border-left-color: var(--high); } .sev.high { background: color-mix(in srgb,var(--high) 16%,transparent); color: var(--high); }
+  .finding.med  { border-left-color: var(--med);  } .sev.med  { background: color-mix(in srgb,var(--med) 18%,transparent); color: var(--med); }
+  .finding.low  { border-left-color: var(--low);  } .sev.low  { background: color-mix(in srgb,var(--low) 16%,transparent); color: var(--low); }
+  .finding.info { border-left-color: var(--info); } .sev.info { background: color-mix(in srgb,var(--info) 16%,transparent); color: var(--info); }
+  @keyframes rise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+
+  /* feature strip + footer */
+  .feats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-top: 64px; }
+  .feat { border: 1px solid var(--border-soft); border-radius: 12px; padding: 18px; background: var(--surface-2); }
+  .feat h3 { margin: 0 0 6px; font-size: 14.5px; }
+  .feat p { margin: 0; color: var(--dim); font-size: 13px; line-height: 1.55; }
+  footer { margin-top: 40px; padding-top: 24px; border-top: 1px solid var(--border-soft); color: var(--faint); font-size: 13px; line-height: 1.7; }
   footer a { color: var(--accent); text-decoration: none; }
-  code { font-family: var(--mono); background: var(--panel2); padding: 1px 5px; border-radius: 4px; font-size: 12.5px; }
+  footer code { font-family: var(--mono); background: var(--surface-3); padding: 2px 7px; border-radius: 6px; font-size: 12px; color: var(--dim); }
+  @media (max-width: 720px) { .feats { grid-template-columns: 1fr; } .loc { margin-left: 0; width: 100%; } }
 </style>
 </head>
 <body>
 <div class="wrap">
-  <header>
-    <h1>Quorum</h1>
-    <p class="tag">A multi-agent code reviewer — a panel of specialist agents reviews your diff and returns one verdict.</p>
-    <p class="sub">Running entirely in your browser via <a href="https://pyodide.org" target="_blank" rel="noopener">Pyodide</a> — no server, no API key. &nbsp;·&nbsp; <a href="https://github.com/skmdroid/quorum" target="_blank" rel="noopener">Source on GitHub →</a></p>
+  <nav>
+    <div class="brand"><span class="mark">◈</span> Quorum</div>
+    <div class="nav-r">
+      <a class="ghostlink" href="https://github.com/skmdroid/quorum" target="_blank" rel="noopener">★ GitHub</a>
+      <button class="iconbtn" id="theme" title="Toggle theme" aria-label="Toggle theme">☾</button>
+    </div>
+  </nav>
+
+  <header class="hero">
+    <span class="pill"><span class="dot"></span> Runs 100% in your browser · no server · no API key</span>
+    <h1>A <span class="g">panel of agents</span> reviews your code.</h1>
+    <p class="lede">Quorum routes a diff to specialist reviewers — <b>security, performance, correctness, tests, style</b> — in parallel, then a synthesizer consolidates everything into one verdict. Try it live below; it's running the pure-Python engine in WebAssembly.</p>
   </header>
 
-  <div class="grid">
-    <div>
-      <label class="cap" for="diff">Paste a unified diff (or use the sample)</label>
+  <section>
+    <div class="agents" id="agents"></div>
+
+    <div class="editor">
+      <div class="editor-bar"><span class="dots"><i></i><i></i><i></i></span><span class="editor-name" id="ename">app/handler.py · unified diff</span></div>
       <textarea id="diff" spellcheck="false">diff --git a/app/handler.py b/app/handler.py
 --- /dev/null
 +++ b/app/handler.py
@@ -100,19 +197,27 @@
 +        return None
 </textarea>
     </div>
-    <div class="row">
-      <button id="run" disabled>Run review</button>
-      <button id="sample" class="ghost">Reset sample</button>
-      <span id="status"><span class="spin"></span>Loading Python runtime…</span>
+
+    <div class="controls">
+      <button class="run" id="run" disabled>Run review</button>
+      <button class="reset" id="reset">Reset sample</button>
+      <span id="status"><span class="spin"></span> Booting Python runtime…</span>
     </div>
+
     <div id="results"></div>
+  </section>
+
+  <div class="feats">
+    <div class="feat"><h3>🧩 Multi-agent</h3><p>Each concern gets its own focused reviewer running concurrently — not one model spread thin.</p></div>
+    <div class="feat"><h3>🔌 Provider-agnostic</h3><p>Mock, Claude, OpenAI, or local Ollama — with native structured output and a tolerant fallback.</p></div>
+    <div class="feat"><h3>📊 Measured</h3><p>A detection benchmark scores recall on planted defects and false alarms on clean code.</p></div>
   </div>
 
   <footer>
     This page runs the <b>deterministic offline reviewer</b> (a heuristic, no LLM) so the demo is free and key-safe.
     For real reviews by an LLM panel, run it locally:
-    <code>pip install -e . &amp;&amp; quorum review --diff pr.diff --provider claude-cli</code>.
-    See the <a href="https://github.com/skmdroid/quorum#readme" target="_blank" rel="noopener">README</a> for providers, config, and the eval benchmark.
+    <code>pip install -e . && quorum review --diff pr.diff --provider claude-cli</code>
+    — see the <a href="https://github.com/skmdroid/quorum#readme" target="_blank" rel="noopener">README</a> for providers, <code>.quorum.json</code> config, and the eval benchmark.
   </footer>
 </div>
 
@@ -121,8 +226,17 @@
 const PYODIDE_URL = "https://cdn.jsdelivr.net/pyodide/v0.26.4/full/";
 const MODULES = ["__init__", "schema", "diff", "providers", "agents", "dispatcher", "synthesizer"];
 const SAMPLE = document.getElementById("diff").value;
-const SEV_CLASS = { critical: "crit", high: "high", medium: "med", low: "low", info: "info" };
-const SEV_DOT = { critical: "⛔", high: "🔴", medium: "🟡", low: "🔵", info: "⚪" };
+const PANEL = ["security", "performance", "correctness", "tests", "style"];
+const META = {
+  security:    { ico: "🛡", nm: "Security" },
+  performance: { ico: "⚡", nm: "Performance" },
+  correctness: { ico: "🎯", nm: "Correctness" },
+  tests:       { ico: "🧪", nm: "Tests" },
+  style:       { ico: "✨", nm: "Style" },
+};
+const SEV = { critical: "crit", high: "high", medium: "med", low: "low", info: "info" };
+const ICON = { critical: "⛔", high: "🔴", medium: "🟡", low: "🔵", info: "⚪" };
+const VICON = { REQUEST_CHANGES: "⊘", COMMENT: "✎", APPROVE: "✓" };
 
 const RUNNER = `
 import json
@@ -143,19 +257,44 @@ def quorum_review(diff_text):
     return json.dumps(result.to_dict())
 `;
 
-const statusEl = document.getElementById("status");
-const runBtn = document.getElementById("run");
-const sampleBtn = document.getElementById("sample");
-const resultsEl = document.getElementById("results");
+const $ = (id) => document.getElementById(id);
+const statusEl = $("status"), runBtn = $("run"), agentsEl = $("agents"), resultsEl = $("results");
+const esc = (s) => String(s).replace(/[&<>]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
+const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+const setStatus = (t, spin = false) => { statusEl.innerHTML = (spin ? '<span class="spin"></span> ' : "") + (t || ""); };
 
-function setStatus(text, spin = false) {
-  statusEl.innerHTML = (spin ? '<span class="spin"></span>' : "") + (text || "");
+// theme
+const themeBtn = $("theme");
+const applyTheme = (t) => { document.documentElement.dataset.theme = t; themeBtn.textContent = t === "dark" ? "☾" : "☀"; };
+applyTheme(localStorage.getItem("quorum-theme") || "dark");
+themeBtn.addEventListener("click", () => {
+  const t = document.documentElement.dataset.theme === "dark" ? "light" : "dark";
+  localStorage.setItem("quorum-theme", t); applyTheme(t);
+});
+
+// agent chips
+function renderChips(state, counts) {
+  agentsEl.innerHTML = PANEL.map(a => {
+    const m = META[a];
+    let cls = "chip", st = "idle", badge = "·";
+    if (state === "scanning") { cls += " scanning"; st = "reviewing…"; badge = '<span class="spin" style="width:11px;height:11px"></span>'; }
+    else if (state === "done") {
+      const n = counts[a] ?? 0;
+      cls += n > 0 ? " found" : " clean";
+      st = n > 0 ? `${n} finding${n > 1 ? "s" : ""}` : "clean";
+      badge = n > 0 ? n : "✓";
+    }
+    return `<div class="${cls}"><span class="ico">${m.ico}</span>
+      <span class="meta"><span class="nm">${m.nm}</span><span class="st">${st}</span></span>
+      <span class="badge">${badge}</span></div>`;
+  }).join("");
 }
-function esc(s) { return String(s).replace(/[&<>]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c])); }
+renderChips("idle", {});
 
+let pyodide;
 const ready = (async () => {
   try {
-    const pyodide = await loadPyodide({ indexURL: PYODIDE_URL });
+    pyodide = await loadPyodide({ indexURL: PYODIDE_URL });
     setStatus("Loading Quorum…", true);
     pyodide.FS.mkdir("/quorum");
     for (const m of MODULES) {
@@ -167,7 +306,6 @@ const ready = (async () => {
     pyodide.runPython(RUNNER);
     setStatus("Ready — runs entirely in your browser.");
     runBtn.disabled = false;
-    return pyodide;
   } catch (e) {
     setStatus("Failed to load: " + e.message);
     throw e;
@@ -175,16 +313,22 @@ const ready = (async () => {
 })();
 
 async function run() {
-  let pyodide;
-  try { pyodide = await ready; } catch { return; }
+  try { await ready; } catch { return; }
   runBtn.disabled = true;
-  setStatus("Reviewing…", true);
+  resultsEl.innerHTML = "";
+  renderChips("scanning", {});
+  setStatus("The panel is reviewing…", true);
   try {
-    pyodide.globals.set("DIFF_TEXT", document.getElementById("diff").value);
+    pyodide.globals.set("DIFF_TEXT", $("diff").value);
     const out = JSON.parse(pyodide.runPython("quorum_review(DIFF_TEXT)"));
+    await sleep(750); // let the panel "deliberate" for effect
+    const counts = {};
+    (out.agents || []).forEach(a => { counts[a.agent] = a.findings; });
+    renderChips("done", counts);
     render(out);
-    setStatus("Reviewed in your browser — no data left this page.");
+    setStatus("Reviewed in your browser — nothing left this page.");
   } catch (e) {
+    renderChips("idle", {});
     setStatus("Error: " + e.message);
   } finally {
     runBtn.disabled = false;
@@ -193,31 +337,32 @@ async function run() {
 
 function render(r) {
   const s = r.stats || {};
-  const counts = ["critical", "high", "medium", "low", "info"]
-    .filter(k => s[k]).map(k => `${SEV_DOT[k]} ${s[k]} ${k}`).join("&nbsp;&nbsp;");
-  const findings = (r.findings || []).map(f => {
-    const cls = SEV_CLASS[f.severity] || "info";
+  const counts = ["critical", "high", "medium", "low", "info"].filter(k => s[k]).map(k =>
+    `<span class="cnt" style="color:var(--${SEV[k]})"><span class="d">${s[k]}</span> ${k}</span>`).join("");
+  const findings = (r.findings || []).map((f, i) => {
+    const cls = SEV[f.severity] || "info";
     const loc = esc(f.file || "") + (f.line != null ? ":" + f.line : "");
-    const fix = f.suggestion ? `<div class="fix"><b>Fix</b> ${esc(f.suggestion)}</div>` : "";
+    const fix = f.suggestion ? `<div class="fix"><b>Fix</b> · ${esc(f.suggestion)}</div>` : "";
     const detail = f.detail ? `<div class="detail">${esc(f.detail)}</div>` : "";
-    return `<div class="finding ${cls}">
+    return `<div class="finding ${cls}" style="animation-delay:${i * 55}ms">
       <div class="top">
-        <span class="sev ${cls}">${SEV_DOT[f.severity] || "•"} ${esc(f.severity)}</span>
-        <span class="title">${esc(f.title)}</span>
-      </div>
-      <div class="loc">${loc} · ${esc(f.category)}</div>
-      ${detail}${fix}
-    </div>`;
+        <span class="sev ${cls}">${ICON[f.severity] || "•"} ${esc(f.severity)}</span>
+        <span class="ftitle">${esc(f.title)}</span>
+        <span class="loc">${loc} · ${esc(f.category)}</span>
+      </div>${detail}${fix}</div>`;
   }).join("");
   resultsEl.innerHTML = `
-    <div class="verdict ${esc(r.verdict)}">VERDICT: ${esc(r.verdict)}</div>
+    <div class="verdict ${esc(r.verdict)}">
+      <div class="vico">${VICON[r.verdict] || "•"}</div>
+      <div><div class="vt">Verdict</div><div class="vv">${esc(r.verdict).replace("_", " ")}</div></div>
+    </div>
     <p class="summary">${esc(r.summary || "")}</p>
     ${counts ? `<div class="counts">${counts}</div>` : ""}
-    ${findings || '<p class="summary">No findings.</p>'}`;
+    ${findings || '<p class="summary">No findings — looks clean.</p>'}`;
 }
 
 runBtn.addEventListener("click", run);
-sampleBtn.addEventListener("click", () => { document.getElementById("diff").value = SAMPLE; resultsEl.innerHTML = ""; });
+$("reset").addEventListener("click", () => { $("diff").value = SAMPLE; resultsEl.innerHTML = ""; renderChips("idle", {}); });
 </script>
 </body>
 </html>
